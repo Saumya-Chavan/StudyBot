@@ -1,10 +1,10 @@
-# 📘 StudyBot — Offline Multi-Agent Study Assistant
+#  StudyBot — Offline Multi-Agent Study Assistant
 
 **A Modular, Fully Offline AI System for Summaries, Questions, Flashcards & Insights.**
 
 ---
 
-## 🔰 Overview
+##  Overview
 
 **StudyBot** is a fully offline, modular **multi-agent system** designed to help students transform raw study notes into structured learning material. Unlike standard wrappers around OpenAI or Gemini, StudyBot performs all logic locally using specialized agents.
 
@@ -22,9 +22,9 @@
 
 ---
 
-## 🧠 Features
+##  Features
 
-### 🔹 Multi-Agent Architecture
+###  Multi-Agent Architecture
 StudyBot uses six independent agents to process information like a team of experts:
 
 | Agent | Purpose | Execution Type |
@@ -36,12 +36,12 @@ StudyBot uses six independent agents to process information like a team of exper
 | **Formula Agent** | Detects mathematical formulas (Regex) | Specialized |
 | **Topic Agent** | Predicts the subject matter | Specialized |
 
-### 🔹 Agent Flow
+###  Agent Flow
 1.  **Sequential:** `Summary Agent` runs first to grasp the global context.
 2.  **Parallel:** `Question Agent` and `Concept Agent` run simultaneously using `ThreadPoolExecutor`.
 3.  **Specialized:** `Flashcard`, `Formula`, and `Topic` agents refine the output based on extracted concepts.
 
-### 🔹 Offline Tools
+###  Offline Tools
 * **PDF Reader:** Uses `pdfplumber` for accurate text extraction.
 * **Language Detector:** Script-based detection + `langdetect`.
 * **Dashboard:** Interactive charts using `Plotly`.
@@ -49,7 +49,7 @@ StudyBot uses six independent agents to process information like a team of exper
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```text
 StudyBot/
@@ -122,7 +122,7 @@ Normalization reduces redundancy. 1NF removes repeating groups. 2NF removes part
 
 - Deployment (Streamlit)
 
-### Future Enhancements (Roadmap)
+### Future Enhancements 
 - Hybrid Mode: Optional toggle for GPT-4o / Gemini API when online.
 
 - Audio Agent: Speech-to-Text for dictating notes.
