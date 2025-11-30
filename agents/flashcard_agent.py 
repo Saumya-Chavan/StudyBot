@@ -1,0 +1,61 @@
+# ...existing code...
+"""Improved flashcard generator agent."""
+
+import re
+from collections import Counter
+
+# small stopword set for basic keyword extraction
+_SIMPLE_STOPWORDS = {
+    "the", "and", "for", "with", "this", "that", "from", "are",
+    "not", "but", "have", "has", "was", "were", "been", "will",
+    "you", "your", "his", "her", "its", "they", "them", "their",
+    "a", "an", "of", "in", "on", "to", "is", "be", "as", "by"
+}
+
+def _extract_simple_keywords(text, top_n=6):
+    if not text:
+        return []
+    words = re.findall(r"\b[a-zA-Z]{3,}\b", str(text).lower())
+    words = [w for w in words if w not in _SIMPLE_STOPWORDS]
+    counts = Counter(words)
+    return [w for w, _ in counts.most_common(top_n)]
+
+def generate_flashcards(keywords, text, lang="en"):
+    """
+    Returns a list of flashcard dicts:
+    [{"term":..., "meaning":..., "example":..., "difficulty":...}, ...]
+    - If keywords is empty/None, falls back to extracting simple keywords from text.
+    """
+    flashcards = []
+    if not keywords:
+        # fallback: extract simple keywords from text
+        keywords = _extract_simple_keywords(text, top_n=8)
+        # if still empty: return no flashcards
+        if not keywords:
+            return flashcards
+
+    sentences = [s.strip() for s in str(text).split('.') if s.strip()]
+
+    for key in keywords:
+        example = ""
+        key_str = str(key)
+        key_lower = key_str.lower()
+        for s in sentences:
+            if key_lower in s.lower():
+                example = s.strip()
+                break
+
+        flashcards.append({
+            "term": key_str,
+            "meaning": f"Important concept related to {key_str}. Review this concept.",
+            "example": example or f"No example sentence found for {key_str}.",
+            "difficulty": "medium"
+        })
+
+    return flashcards
+# ...existing code...
+# ...existing code...
+        # display keywords to debug
+        st.write("DEBUG: keywords from concept agent:", c_out.get("keywords"))
+        st.write("DEBUG: c_out flashcards dict:", c_out.get("flashcards"))
+# ...existing code...

@@ -1,209 +1,251 @@
 # app.py
 """
-Offline StudyBot — Streamlit app (no OpenAI)
-- 100% local offline heuristics
-- Multi-agent: summary (sequential), question+concept (parallel)
-- Saves outputs and persists simple memory.json
+StudyBot (modular) — Offline Multi-Agent Study Helper (Level 2)
+Entry point for the Streamlit UI. Uses modular agents and utils.
+Includes:
+ - summary, question, concept agents (Level 1)
+ - flashcard, formula, topic agents (Level 2)
+ - dashboard charts using utils/charts (Plotly)
+ - PDF & language helpers from utils
 """
 
 import streamlit as st
 from pathlib import Path
-import re
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from collections import Counter
 
-# -------------------------
-# Utilities (tools)
-# -------------------------
-def text_stats(text: str):
-    words = len(text.split())
-    sentences = [s for s in re.split(r'(?<=[.!?])\s+', text.strip()) if s.strip()]
-    return {"words": words, "sentences": len(sentences), "reading_time_min": round(words / 200, 2)}
+# Level 1 agents
+from agents.summary_agent import summarize_text
+from agents.question_agent import generate_questions
+from agents.concept_agent import analyze_concepts
 
-def simple_summary_local(text: str, max_sentences: int = 3) -> str:
-    sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text.strip()) if s.strip()]
-    if not sents:
-        return ""
-    scored = sorted(sents, key=lambda s: len(s), reverse=True)
-    chosen = scored[:max_sentences]
-    chosen_sorted = [s for s in sents if s in chosen]
-    return " ".join(chosen_sorted)
+# Level 2 agents
+from agents.flashcard_agent import generate_flashcards
+from agents.formula_agent import extract_formulas
+from agents.topic_agent import classify_topic
 
-def extract_keywords_local(text: str, top_k: int = 6):
-    STOP = set([
-        "the","is","in","and","to","of","a","an","on","for","with","that","this","it","as","are",
-        "by","be","or","from","at","which","was","were","has","have","but","not","they","their",
-    ])
-    tokens = re.findall(r"[A-Za-z']+", text.lower())
-    tokens = [t for t in tokens if t not in STOP and len(t) > 3]
-    counts = Counter(tokens)
-    return [w for w, _ in counts.most_common(top_k)]
+# utils
+from utils.pdf_reader import extract_text_from_pdf_bytes
+from utils.language_utils import detect_language
+from utils.file_utils import (
+    save_session_outputs,
+    load_memory,
+    save_memory,
+)
 
-# -------------------------
-# Agents (offline heuristics)
-# -------------------------
-def summary_agent(text: str) -> str:
-    return simple_summary_local(text, max_sentences=4)
-
-def question_generator_agent(summary: str) -> dict:
-    sents = [s for s in re.split(r'(?<=[.!?])\s+', summary) if s.strip()]
-    mcqs = []
-    short = []
-    for s in sents[:4]:
-        words = [w for w in re.findall(r"\w+", s) if len(w) > 4]
-        if words:
-            answer = words[0]
-            q_text = s.replace(answer, "_____")
-            options = [answer, answer + "X", "other", "none"]
-            mcqs.append({"q": q_text, "options": options, "answer": answer})
-        else:
-            mcqs.append({"q": s, "options": ["A", "B", "C", "D"], "answer": "A"})
-    for s in sents[:4]:
-        short.append("Explain: " + (s if len(s.split()) < 20 else " ".join(s.split()[:8]) + "..."))
-    return {"mcqs": mcqs, "short": short}
-
-def concept_checker_agent(text: str) -> dict:
-    keywords = extract_keywords_local(text, top_k=8)
-    flashcards = {k: f"Quick note: review the concept of {k}." for k in keywords}
-    weak_points = []
-    for s in re.split(r'(?<=[.!?])\s+', text):
-        s_l = s.lower()
-        if any(w in s_l for w in ["difficult", "confusing", "however", "but"]) and len(weak_points) < 4:
-            weak_points.append(s.strip()[:120])
-    if not weak_points:
-        weak_points = keywords[-2:] if len(keywords) >= 2 else []
-    return {"keywords": keywords, "flashcards": flashcards, "weak_points": weak_points}
-
-# -------------------------
-# Memory (simple JSON)
-# -------------------------
-MEM_FILE = Path("memory.json")
-
-def load_memory():
-    if MEM_FILE.exists():
-        try:
-            return json.loads(MEM_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {"recent": [], "weak": [], "usage": 0}
-
-def save_memory(topic, weak_points):
-    mem = load_memory()
-    recent = mem.get("recent", [])
-    if topic:
-        if topic in recent:
-            recent.remove(topic)
-        recent.insert(0, topic)
-    mem["recent"] = recent[:5]
-    wp = mem.get("weak", [])
-    for w in weak_points:
-        if w not in wp:
-            wp.insert(0, w)
-    mem["weak"] = wp[:8]
-    mem["usage"] = mem.get("usage", 0) + 1
-    MEM_FILE.write_text(json.dumps(mem, indent=2), encoding="utf-8")
-    return mem
-
-# -------------------------
-# Streamlit UI
-# -------------------------
-st.set_page_config(page_title="StudyBot (Offline)", layout="wide")
-st.title("StudyBot — Offline Multi-Agent Study Helper")
-
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    st.subheader("Input notes")
-    uploaded = st.file_uploader(
-        "Upload a notes.txt file or paste text below",
-        type=["txt"]
+# charts (Plotly) with safe fallback
+try:
+    from utils.charts import (
+        plot_topic_frequency,
+        plot_weakpoint_frequency,
+        plot_usage_count,
     )
-    paste = st.text_area("Or paste notes here (overrides upload)", height=250)
-    run_btn = st.button("Analyze (offline)")
+    PLOTLY_AVAILABLE = True
+except Exception:
+    PLOTLY_AVAILABLE = False
 
-with col2:
-    st.subheader("Memory & Info")
+st.set_page_config(page_title="StudyBot ", layout="wide")
+st.sidebar.title("StudyBot")
+st.sidebar.info("Offline modular StudyBot : PDF support, language detection, improved UI, dashboard & agents.")
+
+page = st.sidebar.radio("Navigate", ["Home", "Analyze Notes", "Dashboard", "Memory", "About"])
+
+# -------------------------
+# HOME
+# -------------------------
+if page == "Home":
+    st.title("StudyBot — Offline Multi-Agent Study Helper ")
+    st.markdown(
+        """
+        Modular StudyBot converts notes to summaries, questions, keywords, flashcards, and insights.
+        And adds dashboard charts, flashcard agent, formula extraction, and topic classification.
+        """
+    )
+    st.write("Use **Analyze Notes** to upload `.txt` or `.pdf` or paste text. Dashboard shows aggregated stats.")
+
+# -------------------------
+# ANALYZE NOTES
+# -------------------------
+if page == "Analyze Notes":
+    st.header("Analyze Notes")
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        uploaded = st.file_uploader("Upload notes (.txt or .pdf) or paste text", type=["txt", "pdf"])
+        paste = st.text_area("Or paste notes here (paste overrides uploaded file)", height=260)
+        user_topic = st.text_input("Optional: Topic label (e.g., 'Fragmentation in OS')")
+    with col2:
+        st.markdown("Settings")
+        show_stats = st.checkbox("Show text stats", value=True)
+        run_btn = st.button("Analyze (offline)")
+
+    if run_btn:
+        # get text content
+        text = ""
+        if paste and paste.strip():
+            text = paste.strip()
+        elif uploaded is not None:
+            fname = uploaded.name.lower()
+            if fname.endswith(".pdf"):
+                text = extract_text_from_pdf_bytes(uploaded)
+                if not text:
+                    st.warning("PDF extraction returned no text. If the PDF is scanned (image), OCR is required.")
+            else:
+                try:
+                    raw = uploaded.getvalue()
+                    text = raw.decode("utf-8")
+                except Exception:
+                    text = str(uploaded.getvalue())
+        else:
+            st.warning("Please upload a file or paste text.")
+            st.stop()
+
+        if not text.strip():
+            st.warning("No text to process.")
+            st.stop()
+
+        # language detection
+        lang = detect_language(text)
+        lang_name = "Devanagari (Hindi/Marathi)" if lang != "en" else "English"
+        st.success(f"Detected language: {lang_name}")
+
+        # summary (sequential)
+        with st.spinner("Generating summary..."):
+            summary = summarize_text(text, lang=lang)
+            if show_stats:
+                from utils.file_utils import text_stats
+                stats = text_stats(text)
+                st.metric("Words", stats["words"])
+                st.metric("Sentences", stats["sentences"])
+                st.write(f"Reading time (min): {stats['reading_time_min']}")
+
+            st.subheader("Summary")
+            st.write(summary)
+
+        # run question + concept agents in parallel
+        st.subheader("Questions & Concepts")
+        with st.spinner("Running agents in parallel..."):
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                qf = ex.submit(generate_questions, summary, lang)
+                cf = ex.submit(analyze_concepts, text, lang)
+                q_out = qf.result()
+                c_out = cf.result()
+
+        # display questions
+        st.markdown("### Multiple Choice Questions (sample)")
+        for i, mcq in enumerate(q_out.get("mcqs", []), start=1):
+            st.markdown(f"**Q{i}.** {mcq.get('q')}")
+            for j, opt in enumerate(mcq.get("options", [])):
+                st.write(f"{chr(65+j)}. {opt}")
+            st.write(f"**Answer:** {mcq.get('answer')}")
+            st.write("")
+
+        st.markdown("### Short-answer Questions")
+        for i, q in enumerate(q_out.get("short", []), start=1):
+            st.write(f"{i}. {q}")
+
+        # concepts
+        st.markdown("### Keywords & Flashcards (concept agent)")
+        st.write(", ".join(c_out.get("keywords", [])))
+        for k, v in list(c_out.get("flashcards", {}).items())[:8]:
+            st.write(f"- **{k}**: {v}")
+        st.write("Weak points:", c_out.get("weak_points", []))
+
+        # -------------------------
+        # Level 2 agents: flashcards, formulas, topic
+        # -------------------------
+        st.subheader("Flashcards (improved)")
+        flashcards = generate_flashcards(c_out.get("keywords", []), text, lang)
+        if flashcards:
+            for card in flashcards[:8]:
+                st.markdown(f"**{card['term']}** — {card['meaning']}")
+                if card.get("example"):
+                    st.write("Example:", card["example"])
+                st.write("Difficulty:", card.get("difficulty", "medium"))
+                st.write("---")
+        else:
+            st.write("No flashcards generated.")
+
+        st.subheader("Extracted Formulas")
+        formulas = extract_formulas(text)
+        if formulas:
+            for f in formulas:
+                st.write("- " + f)
+        else:
+            st.write("No formulas detected.")
+
+        st.subheader("Predicted Topic")
+        topic, scores = classify_topic(text)
+        st.success(f"Predicted Topic: **{topic}**")
+        st.write("Topic scores:", scores)
+
+        # save outputs + memory
+        session_dir = save_session_outputs(text, summary, q_out, c_out, label=user_topic)
+        topic_label = user_topic or (c_out.get("keywords",[None])[0] if c_out.get("keywords") else None)
+        saved_mem = save_memory(topic_label, c_out.get("weak_points", []))
+        st.success(f"Saved outputs to {session_dir}")
+        st.write("Memory updated:", saved_mem)
+
+# -------------------------
+# DASHBOARD (Level 2 charts)
+# -------------------------
+if page == "Dashboard":
+    st.header("Dashboard — Study Insights")
     mem = load_memory()
-    st.write("Recent topics:", mem.get("recent", []))
-    st.write("Weak points:", mem.get("weak", []))
-    st.write("Usage count:", mem.get("usage", 0))
-    st.markdown("---")
-    st.write("This offline app uses simple rules — no internet or API needed.")
 
-if run_btn:
-    text = ""
-    if paste and paste.strip():
-        text = paste.strip()
-    elif uploaded is not None:
-        try:
-            text = uploaded.getvalue().decode("utf-8")
-        except:
-            text = str(uploaded.getvalue())
+    st.subheader("Most Studied Topics")
+    if PLOTLY_AVAILABLE:
+        fig1 = plot_topic_frequency(mem.get("recent", []))
+        if fig1:
+            st.plotly_chart(fig1, use_container_width=True)
+        else:
+            st.write("No topic data yet.")
     else:
-        st.warning("Please upload notes or paste text.")
-        st.stop()
+        st.info("Plotly not installed — install plotly to see charts.")
 
-    # Stats + Summary
-    with st.spinner("Computing summary..."):
-        stats = text_stats(text)
-        st.metric("Words", stats["words"])
-        st.metric("Sentences", stats["sentences"])
-        st.write(f"Reading time (min): {stats['reading_time_min']}")
-        summary = summary_agent(text)
-        st.subheader("Summary")
-        st.write(summary)
+    st.subheader("Weak Points Over Time")
+    if PLOTLY_AVAILABLE:
+        fig2 = plot_weakpoint_frequency(mem.get("weak", []))
+        if fig2:
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.write("No weak-point data yet.")
+    else:
+        st.info("Plotly not installed — install plotly to see charts.")
 
-    # Run 2 agents in parallel
-    st.subheader("Generating Questions & Concepts (parallel)")
-    with st.spinner("Running agents..."):
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            q_future = ex.submit(question_generator_agent, summary)
-            c_future = ex.submit(concept_checker_agent, text)
-            q_out = q_future.result()
-            c_out = c_future.result()
+    st.subheader("Usage Count")
+    if PLOTLY_AVAILABLE:
+        fig3 = plot_usage_count(mem.get("usage", 0))
+        st.plotly_chart(fig3, use_container_width=True)
+    else:
+        st.write("Total sessions:", mem.get("usage", 0))
 
-    # Questions
-    st.subheader("MCQs")
-    for i, mcq in enumerate(q_out.get("mcqs", []), start=1):
-        st.markdown(f"**Q{i}.** {mcq['q']}")
-        for j, opt in enumerate(mcq["options"]):
-            st.write(f"{chr(65+j)}. {opt}")
-        st.write(f"**Answer:** {mcq['answer']}")
-        st.write("")
+# -------------------------
+# MEMORY
+# -------------------------
+if page == "Memory":
+    st.header("Memory")
+    mem = load_memory()
+    st.write(mem)
+    if st.button("Clear memory"):
+        from utils.file_utils import clear_memory
+        clear_memory()
+        st.success("Memory cleared.")
 
-    st.subheader("Short Answer Questions")
-    for i, q in enumerate(q_out.get("short", []), start=1):
-        st.write(f"{i}. {q}")
-
-    # Concepts
-    st.subheader("Keywords & Flashcards")
-    st.write("Keywords:", ", ".join(c_out["keywords"]))
-    for k, v in list(c_out["flashcards"].items())[:6]:
-        st.write(f"- **{k}**: {v}")
-
-    st.write("Weak points:", c_out["weak_points"])
-
-    # Update memory
-    topic = c_out["keywords"][0] if c_out["keywords"] else None
-    updated_mem = save_memory(topic, c_out["weak_points"])
-    st.success("Memory updated.")
-    st.write(updated_mem)
-
-    # Save session output
-    outdir = Path("outputs")
-    outdir.mkdir(exist_ok=True)
-    ts = int(time.time())
-    session_dir = outdir / f"session_{ts}"
-    session_dir.mkdir()
-
-    (session_dir / "input.txt").write_text(text)
-    (session_dir / "summary.txt").write_text(summary)
-    (session_dir / "questions.json").write_text(json.dumps(q_out, indent=2))
-    (session_dir / "concepts.json").write_text(json.dumps(c_out, indent=2))
-
-    st.info(f"Saved outputs to: {session_dir}")
+# -------------------------
+# ABOUT
+# -------------------------
+if page == "About":
+    st.header("About StudyBot")
+    st.markdown(
+        """
+        - StudyBot is an offline multi-agent study helper.
+        -  1: PDF support, language detection, improved UI.
+        -  2: Dashboard charts, flashcards, formula extraction, topic classification.
+       
+        """
+    )
+   
 
 st.markdown("---")
-st.caption("Offline StudyBot — Multi-Agent System Demo")
+st.caption("StudyBot — Offline Multi-Agent Study Helper ")
