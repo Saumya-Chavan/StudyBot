@@ -1,27 +1,14 @@
-# utils/pdf_reader.py
-"""PDF extraction helper using pdfplumber (optional)."""
+import pdfplumber
 
-try:
-    import pdfplumber
-    PDFPLUMBER_AVAILABLE = True
-except Exception:
-    PDFPLUMBER_AVAILABLE = False
-
-def extract_text_from_pdf_bytes(uploaded_file):
-    """
-    uploaded_file: Streamlit UploadedFile object
-    Returns concatenated text or empty string if not available.
-    """
-    if not PDFPLUMBER_AVAILABLE:
-        return ""
+def extract_text_from_pdf(uploaded_file):
+    """Extracts raw text from a PDF file object."""
+    text = ""
     try:
-        # streamable object accepted by pdfplumber
         with pdfplumber.open(uploaded_file) as pdf:
-            pages = []
-            for p in pdf.pages:
-                txt = p.extract_text()
-                if txt:
-                    pages.append(txt)
-        return "\n".join(pages)
-    except Exception:
-        return ""
+            for page in pdf.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
+    except Exception as e:
+        return f"Error reading PDF: {e}"
+    return text
