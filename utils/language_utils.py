@@ -1,4 +1,4 @@
-# utils/language_utils.py
+
 """Simple language detection helpers (Devanagari vs English)."""
 
 import re
