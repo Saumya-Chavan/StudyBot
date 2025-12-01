@@ -1,36 +1,22 @@
-# utils/charts.py
-"""Plot charts for StudyBot dashboard."""
-
 import plotly.express as px
-import plotly.graph_objects as go
+import pandas as pd
 
-def plot_topic_frequency(topics_list):
-    if not topics_list:
+def plot_topic_frequency(memory_data):
+    """Plots a bar chart of most studied topics."""
+    if not memory_data or "topics" not in memory_data:
         return None
-    fig = px.bar(
-        x=list(topics_list),
-        y=[topics_list.count(t) for t in topics_list],
-        labels={"x": "Topic", "y": "Frequency"},
-        title="Most Studied Topics"
-    )
+    
+    data = memory_data["topics"]
+    df = pd.DataFrame(list(data.items()), columns=["Topic", "Count"])
+    fig = px.bar(df, x="Topic", y="Count", title="Most Studied Topics")
     return fig
 
-def plot_weakpoint_frequency(weak_list):
-    if not weak_list:
+def plot_weak_points(memory_data):
+    """Plots a pie chart of weak points."""
+    if not memory_data or "weak_points" not in memory_data:
         return None
-    fig = px.bar(
-        x=weak_list,
-        y=[weak_list.count(w) for w in weak_list],
-        labels={"x": "Weak Point", "y": "Frequency"},
-        title="Weak Points Over Time"
-    )
-    return fig
-
-def plot_usage_count(count):
-    fig = go.Figure()
-    fig.add_trace(go.Indicator(
-        mode="number",
-        value=count,
-        title="Total Sessions"
-    ))
+        
+    data = memory_data["weak_points"]
+    df = pd.DataFrame(list(data.items()), columns=["Concept", "Difficulty_Score"])
+    fig = px.pie(df, names="Concept", values="Difficulty_Score", title="Weak Points Distribution")
     return fig
