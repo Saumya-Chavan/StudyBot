@@ -1,24 +1,21 @@
-# agents/topic_agent.py
-"""Classify the topic using keyword-based scoring."""
-
-TOPIC_KEYWORDS = {
-    "Operating Systems": ["process", "memory", "fragmentation", "cpu", "deadlock"],
-    "DBMS": ["sql", "transaction", "schema", "table", "query"],
-    "Computer Networks": ["protocol", "ip", "tcp", "udp", "router"],
-    "OOP": ["class", "object", "inheritance", "polymorphism"],
-    "DSA": ["tree", "graph", "stack", "queue", "algorithm"],
-    "Maths": ["equation", "integral", "derivative", "matrix"],
-}
-
-def classify_topic(text):
-    scores = {topic: 0 for topic in TOPIC_KEYWORDS}
-
-    text_lower = text.lower()
-
-    for topic, keywords in TOPIC_KEYWORDS.items():
-        for w in keywords:
-            if w in text_lower:
-                scores[topic] += 1
-
-    best_topic = max(scores, key=scores.get)
-    return best_topic, scores
+class TopicAgent:
+    def process(self, text):
+        """Classifies topic based on simple keyword matching."""
+        text_lower = text.lower()
+        topics = {
+            "Computer Science": ["algorithm", "data", "memory", "cpu", "network", "database", "sql", "python"],
+            "Physics": ["force", "motion", "energy", "velocity", "gravity", "newton"],
+            "History": ["war", "empire", "king", "ancient", "century"],
+            "Biology": ["cell", "plant", "animal", "dna", "species"]
+        }
+        
+        scores = {topic: 0 for topic in topics}
+        
+        for topic, keywords in topics.items():
+            for k in keywords:
+                if k in text_lower:
+                    scores[topic] += 1
+                    
+      
+        best_topic = max(scores, key=scores.get)
+        return best_topic if scores[best_topic] > 0 else "General Knowledge"
