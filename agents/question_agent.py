@@ -1,21 +1,34 @@
-# agents/question_agent.py
-"""Question generation agent (offline heuristics)"""
-
+import random
 import re
 
-def generate_questions(summary: str, lang: str = "en") -> dict:
-    sents = [s for s in re.split(r'(?<=[.!?])\s+', summary) if s.strip()]
-    mcqs = []
-    short = []
-    for s in sents[:4]:
-        words = [w for w in re.findall(r"\w+", s) if len(w) > 4]
-        if words:
-            answer = words[0]
-            q_text = s.replace(answer, "_____")
-            options = [answer, answer + "X", "other", "none"]
-            mcqs.append({"q": q_text, "options": options, "answer": answer})
-        else:
-            mcqs.append({"q": s, "options": ["A","B","C","D"], "answer":"A"})
-    for s in sents[:4]:
-        short.append("Explain: " + (s if len(s.split())<20 else " ".join(s.split()[:8]) + "..."))
-    return {"mcqs": mcqs, "short": short}
+class QuestionAgent:
+    def process(self, text):
+        """Generates simple Fill-in-the-Blank MCQs."""
+        sentences = [s.strip() for s in text.split('.') if len(s) > 20]
+        questions = []
+        
+        selected_sentences = random.sample(sentences, min(len(sentences), 5))
+        
+        for sent in selected_sentences:
+            words = sent.split()
+            # Pick a random word that is long enough (likely a keyword)
+            candidates = [w for w in words if len(w) > 5]
+            if not candidates: continue
+            
+            answer = random.choice(candidates)
+            clean_answer = re.sub(r'[^\w]', '', answer) # Remove punctuation
+            
+            question_text = sent.replace(answer, "______")
+            
+            # Generate dummy distractors 
+            distractors = ["None of the above", "Variable", "Process", "Algorithm"]
+            options = [clean_answer] + distractors[:3]
+            random.shuffle(options)
+            
+            questions.append({
+                "question": question_text,
+                "options": options,
+                "answer": clean_answer
+            })
+            
+        return questions
